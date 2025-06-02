@@ -56,6 +56,15 @@ class IoUMetric:
         if self.num_samples == 0:
             return 0.0
         return self.total_iou / self.num_samples
+        
+    def compute(self):
+        """
+        计算并返回平均IoU (与get方法功能相同，提供兼容性)
+        
+        Returns:
+            平均IoU值
+        """
+        return self.get()
 
 
 class PD_FA:
@@ -119,6 +128,15 @@ class PD_FA:
         if self.num_samples == 0:
             return 0.0, 0.0
         return self.total_pd / self.num_samples, self.total_fa / self.num_samples
+        
+    def compute(self):
+        """
+        计算并返回平均PD和平均FA (与get方法功能相同，提供兼容性)
+        
+        Returns:
+            (平均PD, 平均FA)
+        """
+        return self.get()
 
 
 class ROCMetric:

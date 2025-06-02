@@ -202,10 +202,10 @@ class SirstDataset(Dataset):
         else:
             edge = np.zeros_like(mask)
         
-        # Convert to Jittor tensors
-        img = jt.array(img.transpose(2, 0, 1))  # HWC to CHW
-        mask = jt.array(mask[None, ...])  # Add channel dimension
-        edge = jt.array(edge.transpose(2, 0, 1))  # HWC to CHW
+        # Convert to Jittor tensors with explicit float32 type
+        img = jt.array(img.transpose(2, 0, 1)).float32()  # HWC to CHW
+        mask = jt.array(mask[None, ...]).float32()  # Add channel dimension
+        edge = jt.array(edge.transpose(2, 0, 1)).float32()  # HWC to CHW
         
         return {
             'image': img,

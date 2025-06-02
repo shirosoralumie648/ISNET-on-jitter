@@ -13,6 +13,15 @@ from isnet.models.isnet_jittor import ISNet
 from isnet.utils.video_processing import process_video, read_video_info
 
 
+def compute(self):
+    """
+    计算并返回平均PD和平均FA (与get方法功能相同，提供兼容性)
+    
+    Returns:
+        (平均PD, 平均FA)
+    """
+    return self.get()
+
 def main():
     """
     u4f7fu7528ISNetu6a21u578bu9884u6d4bu89c6u9891u7684u4e3bu51fdu6570

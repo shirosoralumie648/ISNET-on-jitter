@@ -12,6 +12,8 @@ from .utils.jittor_utils import create_optimizer, create_lr_scheduler
 from .utils.visualization import visualize_prediction, create_comparison_grid, save_visualization
 
 class Trainer:
+
+
     """
     ISNet训练器，负责处理训练和验证逻辑
     """
@@ -129,8 +131,9 @@ class Trainer:
             train_loss = self._train_epoch(epoch)
             self.train_losses.append(train_loss)
             
-            # 验证
-            if self.val_loader is not None and (epoch + 1) % self.config['train']['val_interval'] == 0:
+            # 验证 - 添加默认的val_interval值
+            val_interval = self.config['train'].get('val_interval', 1)  # 默认每个轮次都验证
+            if self.val_loader is not None and (epoch + 1) % val_interval == 0:
                 val_metrics = self._validate_epoch(epoch)
                 self.val_metrics.append(val_metrics)
                 
@@ -200,10 +203,9 @@ class Trainer:
                 total_loss = loss_result
                 loss_info = f"{total_loss.item():.4f}"
             
-            # 反向传播和优化
-            self.optimizer.zero_grad()
-            total_loss.backward()
-            self.optimizer.step()
+            # 反向传播和优化 - Jittor风格
+            # 直接使用optimizer.step(loss)，它会自动完成zero_grad和backward
+            self.optimizer.step(total_loss)
             
             # 累计损失
             epoch_loss += total_loss.item()
@@ -287,7 +289,7 @@ class Trainer:
         # 计算所有指标
         metrics_results = {}
         for name, metric in self.metrics.items():
-            result = metric.compute()
+            result = metric.get()
             if isinstance(result, dict):
                 for k, v in result.items():
                     metrics_results[f"{name}_{k}"] = v

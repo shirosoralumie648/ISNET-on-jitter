@@ -57,3 +57,7 @@ logging:
 hardware:
   use_gpu: True
   seed: 42
+
+# Visualization Configuration
+visualization:
+  enabled: True  # 禁用可视化功能，避免Qt错误

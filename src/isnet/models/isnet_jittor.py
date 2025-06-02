@@ -115,56 +115,64 @@ class ISNet(nn.Module):
                 jt.init.constant_(m.bias, 0)
             # BasicBlock, ISNetResidualBlock, FCNHead, TFD, GatedSpatialConv2d have their own init
 
-    def execute(self, x, x_grad):
-        # x_size = x.shape # N, C, H, W
-        # hei, wid = x_size[2], x_size[3]
-        # Jittor: use x.shape[2] and x.shape[3] directly for interpolate size
+    def execute(self, x, x_grad=None):
+        # 基于原始 PyTorch 版本的实现
+        # 如果没有提供 x_grad，使用简单替代方案
+        if x_grad is None:
+            x_grad = x
+        
+        # 获取输入尺寸
+        hei, wid = x.shape[2], x.shape[3]
 
-        # Stem and backbone feature extraction
-        c0_s = self.stem(x) # PyTorch x1 is c0_s here, output of stem
-        c1 = self.layer1(c0_s) 
+        # Stem 和主干特征提取
+        c0_s = self.stem(x)
+        c1 = self.layer1(c0_s)
         c2 = self.layer2(c1)
         c3 = self.layer3(c2)
 
-        # Decoder path with TTOA stubs
+        # 解码器路径与 TTOA 实现
         deconc2 = self.deconv2(c3)
-        fusec2 = self.TTOA_low(deconc2, c2) # Using TTOA_stub
+        fusec2 = self.TTOA_low(deconc2, c2) 
         upc2 = self.uplayer2(fusec2)
 
         deconc1 = self.deconv1(upc2)
-        fusec1 = self.TTOA_high(deconc1, c1) # Using TTOA_stub
+        fusec1 = self.TTOA_high(deconc1, c1)
         upc1_out = self.uplayer1(fusec1)
 
-        # Edge branch processing
-        # DSN (Deeply Supervised Network) side outputs for edge
-        s1 = nn.interpolate(self.dsn1(c3), size=(x.shape[2], x.shape[3]), mode='bilinear', align_corners=True)
-        s2 = nn.interpolate(self.dsn2(upc2), size=(x.shape[2], x.shape[3]), mode='bilinear', align_corners=True)
-        s3 = nn.interpolate(self.dsn3(upc1_out), size=(x.shape[2], x.shape[3]), mode='bilinear', align_corners=True)
+        # 边缘分支处理 - 与原始 PyTorch 版本一致
+        # DSN (深度监督网络) 边缘输出
+        s1 = nn.interpolate(self.dsn1(c3), size=[hei, wid], mode='bilinear', align_corners=True)
+        s2 = nn.interpolate(self.dsn2(upc2), size=[hei, wid], mode='bilinear', align_corners=True)
+        s3 = nn.interpolate(self.dsn3(upc1_out), size=[hei, wid], mode='bilinear', align_corners=True)
 
-        # Process x_grad (e.g., Sobel operator output)
-        m1f = nn.interpolate(x_grad, size=(x.shape[2], x.shape[3]), mode='bilinear', align_corners=True)
-        m1f = self.dsup(m1f) # Convert x_grad (3 channels) to 64 channels
+        # 处理 x_grad (边缘检测输入)
+        m1f = nn.interpolate(x_grad, size=[hei, wid], mode='bilinear', align_corners=True)
+        m1f = self.dsup(m1f)
+
+        # TFD 模块处理 - 与原始实现一致
+        cs1 = self.myb1(m1f, s1)
+        cs2 = self.myb2(cs1, s2)
+        cs = self.myb3(cs2, s3)
         
-        cs1 = self.myb1(m1f, s1) # TFD module
-        cs2 = self.myb2(cs1, s2) # TFD module
-        cs = self.myb3(cs2, s3)  # TFD module
-        
-        cs = self.fuse(cs) # Conv 1x1 to single channel
-        cs = nn.interpolate(cs, size=(x.shape[2], x.shape[3]), mode='bilinear', align_corners=True)
+        # 边缘输出处理
+        cs = self.fuse(cs)
+        cs = nn.interpolate(cs, size=[hei, wid], mode='bilinear', align_corners=True)
         edge_out = self.sigmoid(cs)
 
-        # Original commented-out SA block:
+        # 与原始 PyTorch 版本一致的处理方式 - 此处遵循原始注释的 SA 块
+        # 原始代码中这部分是被注释的，计算梯度时也不会经过这些层
         # cat = jt.concat([edge_out, x_grad], dim=1)
         # cat = self.SA(cat)
         # acts = self.cw(cat)
         # acts = self.sigmoid(acts)
+        
+        # 特征融合 - 完全遵循原始实现
+        upc1_interpolated = nn.interpolate(upc1_out, size=[hei, wid], mode='bilinear', align_corners=True)
+        # 原始实现: fuse = edge_out * upc1 + upc1
+        fused_features = edge_out * upc1_interpolated + upc1_interpolated
 
-        # Fuse edge output with main segmentation branch
-        upc1_interpolated = nn.interpolate(upc1_out, size=(x.shape[2], x.shape[3]), mode='bilinear', align_corners=True)
-        # Original: fuse = edge_out * upc1 + upc1  which is (edge_out + 1) * upc1_interpolated
-        fused_features = (edge_out + 1) * upc1_interpolated 
-
-        pred = self.head(fused_features) # FCNHead for final segmentation map
-        main_out = nn.interpolate(pred, size=(x.shape[2], x.shape[3]), mode='bilinear', align_corners=True)
+        # 最终预测头
+        pred = self.head(fused_features)
+        main_out = nn.interpolate(pred, size=[hei, wid], mode='bilinear', align_corners=True)
         
         return main_out, edge_out
