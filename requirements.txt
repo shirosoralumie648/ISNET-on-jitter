@@ -1,0 +1,8 @@
+jittor
+numpy
+opencv-python
+tensorboardX
+# Add other specific versions or packages as needed, e.g.:
+# Pillow
+# tqdm
+# pyyaml
