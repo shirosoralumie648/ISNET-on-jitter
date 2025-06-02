@@ -37,16 +37,32 @@ class SirstDataset(Dataset):
             dataset_dir = os.path.join(root_dir, 'sirst-master')
             self.img_dir = os.path.join(dataset_dir, split, 'images')
             self.mask_dir = os.path.join(dataset_dir, split, 'masks')
+            
+            # Get file names for SIRST dataset
+            self.img_names = sorted([f for f in os.listdir(self.img_dir) 
+                                 if f.endswith(('.jpg', '.png', '.bmp'))])
+                                 
         elif dataset_name == 'irstd1k':
+            # 适配旧项目的IRSTD-1k数据集结构
             dataset_dir = os.path.join(root_dir, 'IRSTD-1k')
-            self.img_dir = os.path.join(dataset_dir, split, 'images')
-            self.mask_dir = os.path.join(dataset_dir, split, 'masks')
+            self.imgs_dir = os.path.join(dataset_dir, 'IRSTD1k_Img')
+            self.mask_dir = os.path.join(dataset_dir, 'IRSTD1k_Label')
+            
+            # 使用文本文件列表加载图像
+            txt_file = 'trainval.txt' if split == 'train' else 'test.txt'
+            list_file_path = os.path.join(dataset_dir, txt_file)
+            
+            # 从文本文件加载图像名称
+            self.img_names = []
+            if os.path.exists(list_file_path):
+                with open(list_file_path, 'r') as f:
+                    self.img_names = [line.strip() for line in f.readlines()]
+            else:
+                # 如果没有文本文件，则直接从目录加载
+                self.img_names = sorted([f for f in os.listdir(self.imgs_dir) 
+                                     if f.endswith(('.jpg', '.png', '.bmp'))])
         else:
             raise ValueError(f"Dataset {dataset_name} not supported, use 'sirst' or 'irstd1k'")
-        
-        # Get file names
-        self.img_names = sorted([f for f in os.listdir(self.img_dir) 
-                               if f.endswith(('.jpg', '.png', '.bmp'))])
         
         self.total_len = len(self.img_names)
     
@@ -109,18 +125,49 @@ class SirstDataset(Dataset):
     def __getitem__(self, idx):
         # Get image and mask paths
         img_name = self.img_names[idx]
-        img_path = os.path.join(self.img_dir, img_name)
         
-        # For SIRST, mask names might have different extensions
-        mask_name = os.path.splitext(img_name)[0] + '.png'
-        mask_path = os.path.join(self.mask_dir, mask_name)
-        if not os.path.exists(mask_path):
-            # Try other extensions
-            for ext in ['.jpg', '.bmp']:
-                alt_mask_path = os.path.join(self.mask_dir, os.path.splitext(img_name)[0] + ext)
-                if os.path.exists(alt_mask_path):
-                    mask_path = alt_mask_path
+        if self.dataset_name == 'sirst':
+            img_path = os.path.join(self.img_dir, img_name)
+            
+            # For SIRST, mask names might have different extensions
+            mask_name = os.path.splitext(img_name)[0] + '.png'
+            mask_path = os.path.join(self.mask_dir, mask_name)
+            if not os.path.exists(mask_path):
+                # Try other extensions
+                for ext in ['.jpg', '.bmp']:
+                    alt_mask_path = os.path.join(self.mask_dir, os.path.splitext(img_name)[0] + ext)
+                    if os.path.exists(alt_mask_path):
+                        mask_path = alt_mask_path
+                        break
+        
+        elif self.dataset_name == 'irstd1k':
+            # IRSTD-1k 数据集的路径处理
+            # 图像文件路径
+            # 处理没有扩展名的文件名情况
+            img_found = False
+            for ext in ['.png', '.jpg', '.bmp']:
+                full_img_path = os.path.join(self.imgs_dir, img_name + ext)
+                if os.path.exists(full_img_path):
+                    img_path = full_img_path
+                    img_found = True
                     break
+                    
+            # 如果没有找到匹配的文件，尝试直接使用原文件名
+            if not img_found:
+                img_path = os.path.join(self.imgs_dir, img_name)
+                
+            # 标签文件路径处理
+            mask_found = False
+            for ext in ['.png', '.jpg', '.bmp']:
+                full_mask_path = os.path.join(self.mask_dir, img_name + ext)
+                if os.path.exists(full_mask_path):
+                    mask_path = full_mask_path
+                    mask_found = True
+                    break
+                    
+            # 如果没有找到匹配的标签文件，尝试直接使用原文件名
+            if not mask_found:
+                mask_path = os.path.join(self.mask_dir, img_name)
         
         # Read image and mask
         img = cv2.imread(img_path)

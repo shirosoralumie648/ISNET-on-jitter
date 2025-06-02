@@ -53,7 +53,7 @@ class Trainer:
         
         # 创建保存目录
         self.checkpoint_dir = os.path.join(
-            config['checkpoint']['dir'], 
+            config['checkpoint']['save_dir'], 
             f"{config['model']['name']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -74,8 +74,8 @@ class Trainer:
         if loss_name == 'combined':
             from .losses.combined_loss import CombinedLoss
             return CombinedLoss(
-                main_loss_weight=self.config['loss']['main_weight'],
-                edge_loss_weight=self.config['loss']['edge_weight']
+                main_weight=self.config['loss']['main_weight'],
+                edge_weight=self.config['loss']['edge_weight']
             )
         elif loss_name == 'bcedice':
             from .losses.dice_loss import BCEDiceLoss
@@ -184,18 +184,32 @@ class Trainer:
             predictions, edge_outputs = self.model(images, edges)
             
             # 计算损失
-            loss = self.criterion(predictions, edge_outputs, masks, edges)
+            loss_result = self.criterion(predictions, edge_outputs, masks, edges)
+            
+            # 处理不同类型的损失返回值
+            if isinstance(loss_result, tuple):
+                # 如果是元组，则使用第一个元素作为总损失
+                total_loss = loss_result[0]
+                loss_info = f"{total_loss.item():.4f}"
+                if len(loss_result) > 2:
+                    main_loss = loss_result[1]
+                    edge_loss = loss_result[2]
+                    loss_info = f"Total: {total_loss.item():.4f}, Main: {main_loss.item():.4f}, Edge: {edge_loss.item():.4f}"
+            else:
+                # 如果不是元组，则直接使用
+                total_loss = loss_result
+                loss_info = f"{total_loss.item():.4f}"
             
             # 反向传播和优化
             self.optimizer.zero_grad()
-            loss.backward()
+            total_loss.backward()
             self.optimizer.step()
             
             # 累计损失
-            epoch_loss += loss.item()
+            epoch_loss += total_loss.item()
             
             # 更新进度条
-            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            pbar.set_postfix({"loss": loss_info})
             pbar.update(1)
         
         pbar.close()
@@ -225,15 +239,38 @@ class Trainer:
         # 使用tqdm显示进度条
         pbar = tqdm(total=len(self.val_loader), desc=f"验证轮次 {epoch+1}")
         
+        val_loss = 0.0
+        val_samples = 0
+        
         with jt.no_grad():
             for i, batch in enumerate(self.val_loader):
                 # 解析批次数据
                 images, masks, edges = batch['image'], batch['mask'], batch['edge']
+                val_samples += images.shape[0]
                 
                 # 前向传播
                 predictions, edge_outputs = self.model(images, edges)
                 
-                # 应用sigmoid激活
+                # 计算验证集损失并显示详细信息
+                loss_result = self.criterion(predictions, edge_outputs, masks, edges)
+                
+                # 处理不同类型的损失返回值
+                if isinstance(loss_result, tuple):
+                    # 如果是元组，则使用第一个元素作为总损失
+                    total_loss = loss_result[0]
+                    loss_info = f"{total_loss.item():.4f}"
+                    if len(loss_result) > 2:
+                        main_loss = loss_result[1]
+                        edge_loss = loss_result[2]
+                        loss_info = f"Total: {total_loss.item():.4f}, Main: {main_loss.item():.4f}, Edge: {edge_loss.item():.4f}"
+                else:
+                    # 如果不是元组，则直接使用
+                    total_loss = loss_result
+                    loss_info = f"{total_loss.item():.4f}"
+                
+                val_loss += total_loss.item() * images.shape[0]
+                
+                # 应用sigmoid激活用于评估指标
                 predictions = jt.sigmoid(predictions)
                 edge_outputs = jt.sigmoid(edge_outputs)
                 
@@ -242,6 +279,7 @@ class Trainer:
                     metric.update(predictions, masks)
                 
                 # 更新进度条
+                pbar.set_postfix({"val_loss": loss_info})
                 pbar.update(1)
         
         pbar.close()

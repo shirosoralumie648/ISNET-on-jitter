@@ -2,8 +2,8 @@
 
 # Dataset Configuration
 dataset:
-  name: "sirst"  # Dataset name: sirst or irstd1k
-  root_dir: "../../data"  # Root directory containing dataset
+  name: "irstd1k"  # Dataset name: sirst or irstd1k
+  root_dir: "./data"  # Root directory containing dataset
   train_dir: 
     sirst: "sirst-master/train"
     irstd1k: "IRSTD-1k/train"
@@ -36,6 +36,7 @@ train:
 
 # Loss Configuration
 loss:
+  name: "combined"  # combined, bcedice, dice, edge
   edge_weight: 0.5  # Weight for edge loss
   main_weight: 1.0  # Weight for main segmentation loss
 

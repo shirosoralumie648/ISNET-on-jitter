@@ -147,7 +147,9 @@ def create_optimizer(config, model_parameters):
         return nn.SGD(model_parameters, lr=lr, momentum=config['train']['momentum'], 
                       weight_decay=weight_decay)
     elif optimizer_name == 'adagrad':
-        return nn.Adagrad(model_parameters, lr=lr, weight_decay=weight_decay)
+        # Jittor不支持Adagrad，使用Adam替代
+        print("警告: Jittor不支持Adagrad优化器，将使用Adam替代")
+        return nn.Adam(model_parameters, lr=lr, weight_decay=weight_decay)
     else:
         raise ValueError(f"不支持的优化器: {optimizer_name}")
 
