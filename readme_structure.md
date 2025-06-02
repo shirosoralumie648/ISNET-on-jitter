@@ -70,4 +70,46 @@ This document outlines the project architecture for ISNet based on the provided 
 *   [old/model/testmodule.py](cci:7://file:///c:/shirosoralumie648/ISNET-on-jitter/old/model/testmodule.py:0:0-0:0): Likely a test script, not part of the main training pipeline.
 *   `old/model/lib/`, `old/model/my_functionals/`, `old/model/network/`, `old/model/sync_batchnorm/`, `old/model/utils/`: These directories and their contents are not directly imported by [train_ISNet.py](cci:7://file:///c:/shirosoralumie648/ISNET-on-jitter/old/model/train_ISNet.py:0:0-0:0). They might be dependencies of [ISNet.py](cci:7://file:///c:/shirosoralumie648/ISNET-on-jitter/old/model/ISNet.py:0:0-0:0) or other imported modules, or remnants of older code. A deeper analysis of [ISNet.py](cci:7://file:///c:/shirosoralumie648/ISNET-on-jitter/old/model/ISNet.py:0:0-0:0) would be needed to confirm their usage.
 
+## Project Architecture Diagram
+
+```mermaid
+graph TD
+    subgraph External_Dependencies["External Dependencies"]
+        direction LR
+        DCNv2["DCNv2 Module\n(old/model/DCNv2)"]
+        Requirements["requirements.txt\n(old/requirements.txt)"]
+        Dataset_IRSTD1k["IRSTD-1k Dataset"]
+        Dataset_SIRST["SIRST Dataset"]
+    end
+
+    subgraph ISNet_Application["ISNet Application (old/model)"]
+        direction TB
+        Train_ISNet["train_ISNet.py\n(Main Script)"]
+        
+        ISNet_py["ISNet.py\n(Model Architecture)"]
+        
+        subgraph Helper_Modules["Helper Modules"]
+            direction LR
+            Dataset_Loader["utils1/dataset_IRSTD1K.py"]
+            Loss_py["loss.py"]
+            Metrics_py["metrics.py"]
+            Metric_py["metric.py"]
+            LR_Scheduler["utils1/lr_scheduler.py"]
+        end
+    end
+
+    Dataset_IRSTD1k --> Dataset_Loader
+    Dataset_SIRST --> Dataset_Loader
+    
+    Requirements --> Train_ISNet
+    Train_ISNet --> ISNet_py
+    Train_ISNet --> Dataset_Loader
+    Train_ISNet --> Loss_py
+    Train_ISNet --> Metrics_py
+    Train_ISNet --> Metric_py
+    Train_ISNet --> LR_Scheduler
+    
+    ISNet_py --> DCNv2
+```
+
 This architecture is derived from the provided usage steps and an analysis of the import statements in [old/model/train_ISNet.py](cci:7://file:///c:/shirosoralumie648/ISNET-on-jitter/old/model/train_ISNet.py:0:0-0:0).
