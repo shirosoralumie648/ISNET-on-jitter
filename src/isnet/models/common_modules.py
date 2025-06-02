@@ -147,16 +147,17 @@ class GatedSpatialConv2d(nn.Module):
         return self.main_conv(input_features_gated)
   
     def reset_parameters(self):
-        jt.init.xavier_normal_(self.main_conv.weight)
+        # 将xavier_normal_替换为kaiming_normal_
+        jt.init.kaiming_normal_(self.main_conv.weight, mode='fan_out', nonlinearity='relu')
         if self.main_conv.bias is not None:
-            jt.init.zeros_(self.main_conv.bias)
+            jt.init.constant_(self.main_conv.bias, 0)  # 使用constant_替换zeros_
         
         # Initialize gate_conv parameters (optional, but good practice)
         for m in self._gate_conv.modules():
             if isinstance(m, nn.Conv):
                 jt.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
-                    jt.init.zeros_(m.bias)
+                    jt.init.constant_(m.bias, 0)  # 使用constant_替换zeros_
             elif isinstance(m, nn.BatchNorm):
                 jt.init.constant_(m.weight, 1)
                 jt.init.constant_(m.bias, 0)

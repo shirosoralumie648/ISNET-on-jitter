@@ -1,0 +1,58 @@
+# ISNet Default Configuration
+
+# Dataset Configuration
+dataset:
+  name: "sirst"  # Dataset name: sirst or irstd1k
+  root_dir: "../../data"  # Root directory containing dataset
+  train_dir: 
+    sirst: "sirst-master/train"
+    irstd1k: "IRSTD-1k/train"
+  test_dir:
+    sirst: "sirst-master/test"
+    irstd1k: "IRSTD-1k/test"
+  img_size: [256, 256]  # Input image size [H, W]
+  batch_size: 8
+  num_workers: 4
+  augmentations: True  # Whether to use data augmentations
+
+# Model Configuration
+model:
+  name: "ISNet"
+  layer_blocks: [2, 2, 2]  # Number of residual blocks in each layer
+  channels: [16, 32, 64, 128]  # Channel sizes for stem and layers
+  pretrained: False  # Whether to use pretrained backbone
+
+# Training Configuration
+train:
+  epochs: 100
+  optimizer: "adagrad"  # adagrad, sgd, adam
+  learning_rate: 0.1
+  weight_decay: 0.0001
+  momentum: 0.9  # Only used for SGD
+  lr_scheduler: "poly"  # poly, step, cosine
+  lr_power: 0.9  # Only used for poly scheduler
+  step_size: 30  # Only used for step scheduler
+  gamma: 0.1  # Only used for step scheduler
+
+# Loss Configuration
+loss:
+  edge_weight: 0.5  # Weight for edge loss
+  main_weight: 1.0  # Weight for main segmentation loss
+
+# Checkpoint Configuration
+checkpoint:
+  save_dir: "../../results/checkpoints"
+  save_freq: 5  # Save checkpoint every N epochs
+  resume: ""  # Path to checkpoint to resume from
+
+# Logging Configuration
+logging:
+  log_dir: "../../results/logs"
+  tensorboard: True
+  log_freq: 10  # Log every N iterations
+  val_freq: 5  # Validate every N epochs
+
+# Hardware Configuration
+hardware:
+  use_gpu: True
+  seed: 42

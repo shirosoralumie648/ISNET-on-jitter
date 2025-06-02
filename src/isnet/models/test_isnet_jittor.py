@@ -1,8 +1,19 @@
 import jittor as jt
-from .isnet_jittor import ISNet
+import sys
+import os
 
-# Disable Jittor messages like 'generating source code' for cleaner output
-jt.flags.disable_output = True # Or jt.flags.log_silent = 1 depending on Jittor version
+# 添加项目根目录到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# 使用绝对导入
+from isnet.models.isnet_jittor import ISNet
+
+# 禁用Jittor消息，如'generating source code'，使输出更干净
+try:
+    jt.flags.log_silent = 1  # 尝试使用当前版本的标志
+    print('已设置Jittor日志为静音模式')
+except Exception as e:
+    print(f'警告: 无法设置Jittor日志标志: {e}')
 
 def run_isnet_sanity_check():
     print("Running ISNet (Jittor) Sanity Check...")
