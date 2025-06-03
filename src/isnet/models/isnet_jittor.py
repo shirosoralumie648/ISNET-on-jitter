@@ -4,20 +4,9 @@ from .common_modules import (
     Norm2d, BasicBlock, ISNetResidualBlock, 
     FCNHead, TFD, SALayer, GatedSpatialConv2d
 )
+from .dcnv2_jittor import TTOA # Import the actual TTOA
 
-class TTOA_stub(nn.Module):
-    """Stub for TTOA module. Replaces DCNv2-based TTOA for initial porting."""
-    def __init__(self, low_channels, high_channels):
-        super(TTOA_stub, self).__init__()
-        # This stub will simply add the two features. 
-        # Add a 1x1 conv if channel alignment is needed, but original TTOA implies alignment.
-        # For ISNet, TTOA is called with same low_channels and high_channels.
-        # print(f"Warning: Using TTOA_stub for channels {low_channels}. Actual TTOA functionality is not implemented.")
 
-    def execute(self, x_l, x_h):
-        # A simple element-wise sum as a placeholder for the DCN-based aggregation.
-        # This assumes x_l and x_h have compatible shapes for addition.
-        return x_l + x_h
 
 class ISNet(nn.Module):
     def __init__(self, layer_blocks, channels):
@@ -38,9 +27,9 @@ class ISNet(nn.Module):
             nn.Pool(kernel_size=3, stride=2, padding=1, op='maximum') # MaxPool2d
         )
         
-        # Use TTOA_stub instead of the DCNv2-based TTOA
-        self.TTOA_low = TTOA_stub(channels[2], channels[2]) # e.g., TTOA_stub(64, 64)
-        self.TTOA_high = TTOA_stub(channels[1], channels[1]) # e.g., TTOA_stub(32, 32)
+        # Use the actual TTOA module
+        self.TTOA_low = TTOA(channels[2], channels[2], deformable_groups=1) # e.g., TTOA(64, 64)
+        self.TTOA_high = TTOA(channels[1], channels[1], deformable_groups=1) # e.g., TTOA(32, 32)
         
         # Main backbone layers using ISNetResidualBlock
         self.layer1 = self._make_layer(block=ISNetResidualBlock, block_num=layer_blocks[0],

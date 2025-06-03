@@ -10,6 +10,7 @@ from datetime import datetime
 from .utils.jittor_utils import save_checkpoint, load_checkpoint, setup_jittor
 from .utils.jittor_utils import create_optimizer, create_lr_scheduler
 from .utils.visualization import visualize_prediction, create_comparison_grid, save_visualization
+from .utils.gradient_utils import GetGradientNopadding # Import GetGradientNopadding
 
 class Trainer:
 
@@ -63,6 +64,10 @@ class Trainer:
         # 可视化目录
         self.visualization_dir = os.path.join(self.checkpoint_dir, 'visualizations')
         os.makedirs(self.visualization_dir, exist_ok=True)
+
+        # 初始化梯度计算模块 (如果使用CombinedLoss且需要边缘监督)
+        if self.config['loss']['name'].lower() == 'combined':
+            self.get_gradient = GetGradientNopadding()
     
     def _create_loss_function(self):
         """
@@ -233,77 +238,53 @@ class Trainer:
             包含各项评估指标的字典
         """
         self.model.eval()
+        epoch_loss = 0.0
         
-        # 重置所有指标
-        for metric in self.metrics.values():
-            metric.reset()
-        
-        # 使用tqdm显示进度条
-        pbar = tqdm(total=len(self.val_loader), desc=f"验证轮次 {epoch+1}")
-        
-        val_loss = 0.0
-        val_samples = 0
+        for metric_calculator in self.metrics.values():
+            metric_calculator.reset()
+            
+        pbar = tqdm(total=len(self.val_loader), desc=f"验证轮次 {epoch+1}/{self.config['train']['epochs']}")
         
         with jt.no_grad():
-            for i, batch in enumerate(self.val_loader):
-                # 解析批次数据
-                images, masks, edges = batch['image'], batch['mask'], batch['edge']
-                val_samples += images.shape[0]
-                
-                # 前向传播
-                predictions, edge_outputs = self.model(images, edges)
-                
-                # 计算验证集损失并显示详细信息
-                loss_result = self.criterion(predictions, edge_outputs, masks, edges)
-                
-                # 处理不同类型的损失返回值
-                if isinstance(loss_result, tuple):
-                    # 如果是元组，则使用第一个元素作为总损失
-                    total_loss = loss_result[0]
-                    loss_info = f"{total_loss.item():.4f}"
-                    if len(loss_result) > 2:
-                        main_loss = loss_result[1]
-                        edge_loss = loss_result[2]
-                        loss_info = f"Total: {total_loss.item():.4f}, Main: {main_loss.item():.4f}, Edge: {edge_loss.item():.4f}"
+            for batch_idx, batch in enumerate(self.val_loader):
+                images = batch['image']
+                main_targets = batch['mask']
+                model_edge_input = batch.get('edge_map', images)
+
+                main_pred, edge_pred = self.model(images, model_edge_input)
+
+                loss_val_info = ""
+                if self.config['loss']['name'].lower() == 'combined':
+                    edge_targets = self.get_gradient(main_targets)
+                    total_loss, main_loss_val, edge_loss_val = self.criterion(main_pred, main_targets, edge_pred, edge_targets)
+                    loss = total_loss
+                    loss_val_info = f"Total: {loss.item():.4f}, Main: {main_loss_val.item():.4f}, Edge: {edge_loss_val.item():.4f}"
                 else:
-                    # 如果不是元组，则直接使用
-                    total_loss = loss_result
-                    loss_info = f"{total_loss.item():.4f}"
+                    loss = self.criterion(main_pred, main_targets)
+                    loss_val_info = f"{loss.item():.4f}"
                 
-                val_loss += total_loss.item() * images.shape[0]
+                epoch_loss += loss.item()
+                pbar.set_postfix(loss=loss_val_info)
+
+                main_pred_sigmoid = jt.sigmoid(main_pred)
+                for metric_calculator in self.metrics.values():
+                    metric_calculator.update(main_pred_sigmoid, main_targets)
                 
-                # 应用sigmoid激活用于评估指标
-                predictions = jt.sigmoid(predictions)
-                edge_outputs = jt.sigmoid(edge_outputs)
-                
-                # 更新指标
-                for name, metric in self.metrics.items():
-                    metric.update(predictions, masks)
-                
-                # 更新进度条
-                pbar.set_postfix({"val_loss": loss_info})
                 pbar.update(1)
         
         pbar.close()
-        
-        # 计算所有指标
-        metrics_results = {}
-        for name, metric in self.metrics.items():
-            result = metric.get()
-            if isinstance(result, dict):
-                for k, v in result.items():
-                    metrics_results[f"{name}_{k}"] = v
-            else:
-                metrics_results[name] = result
-        
-        # 打印指标
-        print(f"轮次 {epoch+1} 验证结果:")
-        for name, value in metrics_results.items():
-            if isinstance(value, (int, float)):
-                print(f"  {name}: {value:.4f}")
-        
-        return metrics_results
-    
+        avg_loss = epoch_loss / len(self.val_loader)
+        print(f"轮次 {epoch+1} 验证损失: {avg_loss:.4f}")
+
+        metrics_summary = {}
+        for name, metric_calculator in self.metrics.items():
+            metric_value = metric_calculator.get()
+            if isinstance(metric_value, dict):
+                 for k, v in metric_value.items(): metrics_summary[f"{name}_{k}"] = v
+            else: metrics_summary[name] = metric_value
+            print(f"  {name}: {metric_value}")
+        return metrics_summary
+
     def _visualize_predictions(self, epoch):
         """
         可视化一些验证样本的预测结果
@@ -312,81 +293,42 @@ class Trainer:
             epoch: 当前训练轮次
         """
         self.model.eval()
+        num_samples_to_viz = self.config.get('visualization', {}).get('num_samples', 4)
         
-        # 获取一些验证样本
-        num_samples = min(4, len(self.val_loader))
-        samples = []
-        
+        viz_data = []
         with jt.no_grad():
             for i, batch in enumerate(self.val_loader):
-                if i >= num_samples:
+                if i * batch['image'].shape[0] >= num_samples_to_viz:
                     break
+                images = batch['image']
+                main_targets = batch['mask']
+                model_edge_input = batch.get('edge_map', images)
                 
-                # 解析批次数据
-                images, masks, edges = batch['image'], batch['mask'], batch['edge']
+                main_pred, edge_pred = self.model(images, model_edge_input)
+                main_pred_sigmoid = jt.sigmoid(main_pred)
+                edge_pred_sigmoid = jt.sigmoid(edge_pred) # Assuming edge_pred also needs sigmoid for viz
                 
-                # 前向传播
-                predictions, edge_outputs = self.model(images, edges)
-                
-                # 应用sigmoid激活
-                predictions = jt.sigmoid(predictions)
-                edge_outputs = jt.sigmoid(edge_outputs)
-                
-                # 添加到样本列表
-                for j in range(min(1, len(images))):
-                    samples.append({
-                        'image': images[j],
-                        'mask': masks[j],
-                        'prediction': predictions[j],
-                        'edge': edge_outputs[j]
-                    })
-                
-                if len(samples) >= num_samples:
-                    break
+                for j in range(images.shape[0]):
+                    if len(viz_data) < num_samples_to_viz:
+                        viz_data.append({
+                            'image': images[j].numpy(),
+                            'mask': main_targets[j].numpy(),
+                            'prediction': main_pred_sigmoid[j].numpy(),
+                            'edge_gt': self.get_gradient(main_targets[j:j+1])[0].numpy() if hasattr(self, 'get_gradient') else None,
+                            'edge_pred': edge_pred_sigmoid[j].numpy()
+                        })
+                    else:
+                        break
         
-        # 创建可视化网格
-        images = [s['image'] for s in samples]
-        masks = [s['mask'] for s in samples]
-        predictions = [s['prediction'] for s in samples]
-        edges = [s['edge'] for s in samples]
-        
-        fig = create_comparison_grid(images, masks, predictions, edges)
-        
-        # 保存可视化结果
+        if not viz_data:
+            print("没有样本可供可视化。")
+            return
+
+        fig = create_comparison_grid(viz_data, self.config.get('visualization', {}))
         save_path = os.path.join(self.visualization_dir, f"epoch_{epoch+1}.png")
         save_visualization(fig, save_path)
-    
-    def predict(self, image, edge=None, return_edge=False):
-        """
-        对单张图像进行预测
-        
-        Args:
-            image: 输入图像，形状为[1, C, H, W]的Jittor张量
-            edge: 可选的边缘图，形状为[1, C, H, W]的Jittor张量
-            return_edge: 是否返回边缘预测
-            
-        Returns:
-            预测的分割掩码，如果return_edge为True，则同时返回边缘预测
-        """
-        self.model.eval()
-        
-        # 如果未提供边缘图，创建一个零张量
-        if edge is None:
-            edge = jt.zeros((1, 3, image.shape[2], image.shape[3]))
-        
-        with jt.no_grad():
-            # 前向传播
-            predictions, edge_outputs = self.model(image, edge)
-            
-            # 应用sigmoid激活
-            predictions = jt.sigmoid(predictions)
-            edge_outputs = jt.sigmoid(edge_outputs)
-        
-        if return_edge:
-            return predictions, edge_outputs
-        else:
-            return predictions
-    
+        print(f"可视化结果已保存到: {save_path}")
+
     def evaluate(self, test_loader):
         """
         在测试集上评估模型
@@ -398,53 +340,58 @@ class Trainer:
             包含各项评估指标的字典
         """
         self.model.eval()
-        
-        # 重置所有指标
-        for metric in self.metrics.values():
-            metric.reset()
-        
-        # 使用tqdm显示进度条
-        pbar = tqdm(total=len(test_loader), desc="测试中")
+        epoch_loss = 0.0 # For consistency, can also track loss during evaluation
+
+        for metric_calculator in self.metrics.values():
+            metric_calculator.reset()
+            
+        pbar = tqdm(total=len(test_loader), desc="评估中")
         
         with jt.no_grad():
-            for i, batch in enumerate(test_loader):
-                # 解析批次数据
-                images, masks, edges = batch['image'], batch['mask'], batch['edge']
+            for batch_idx, batch in enumerate(test_loader):
+                images = batch['image']
+                main_targets = batch['mask']
+                model_edge_input = batch.get('edge_map', images)
+
+                main_pred, edge_pred = self.model(images, model_edge_input)
+
+                loss_val_info = ""
+                if self.config['loss']['name'].lower() == 'combined' and hasattr(self, 'get_gradient'):
+                    edge_targets = self.get_gradient(main_targets)
+                    total_loss, main_loss_val, edge_loss_val = self.criterion(main_pred, main_targets, edge_pred, edge_targets)
+                    loss = total_loss
+                    loss_val_info = f"Total: {loss.item():.4f}, Main: {main_loss_val.item():.4f}, Edge: {edge_loss_val.item():.4f}"
+                elif self.config['loss']['name'].lower() != 'combined': # Handle non-combined losses
+                    loss = self.criterion(main_pred, main_targets)
+                    loss_val_info = f"{loss.item():.4f}"
+                else: # Combined loss but no get_gradient (should not happen if configured correctly)
+                    loss = self.criterion(main_pred, main_targets) # Fallback or specific handling
+                    loss_val_info = f"{loss.item():.4f}"
+
+                if isinstance(loss, jt.Var): # Ensure loss is a Jittor Var before .item()
+                    epoch_loss += loss.item()
+                pbar.set_postfix(loss=loss_val_info)
+
+                main_pred_sigmoid = jt.sigmoid(main_pred)
+                for metric_calculator in self.metrics.values():
+                    metric_calculator.update(main_pred_sigmoid, main_targets)
                 
-                # 前向传播
-                predictions, edge_outputs = self.model(images, edges)
-                
-                # 应用sigmoid激活
-                predictions = jt.sigmoid(predictions)
-                edge_outputs = jt.sigmoid(edge_outputs)
-                
-                # 更新指标
-                for name, metric in self.metrics.items():
-                    metric.update(predictions, masks)
-                
-                # 更新进度条
                 pbar.update(1)
         
         pbar.close()
-        
-        # 计算所有指标
-        metrics_results = {}
-        for name, metric in self.metrics.items():
-            result = metric.compute()
-            if isinstance(result, dict):
-                for k, v in result.items():
-                    metrics_results[f"{name}_{k}"] = v
-            else:
-                metrics_results[name] = result
-        
-        # 打印指标
-        print("测试结果:")
-        for name, value in metrics_results.items():
-            if isinstance(value, (int, float)):
-                print(f"  {name}: {value:.4f}")
-        
-        return metrics_results
-    
+        avg_loss = epoch_loss / len(test_loader) if len(test_loader) > 0 else 0
+        print(f"评估平均损失: {avg_loss:.4f}")
+
+        metrics_summary = {}
+        print("评估结果:")
+        for name, metric_calculator in self.metrics.items():
+            metric_value = metric_calculator.get() # Use .get() for metrics
+            if isinstance(metric_value, dict):
+                 for k, v in metric_value.items(): metrics_summary[f"{name}_{k}"] = v
+            else: metrics_summary[name] = metric_value
+            print(f"  {name}: {metric_value}") # Or format nicely
+        return metrics_summary
+
     def plot_training_progress(self, save_path=None):
         """
         绘制训练进度图表
@@ -456,43 +403,46 @@ class Trainer:
             print("无训练历史可绘制")
             return
         
-        # 创建图表
-        fig, ax1 = plt.subplots(figsize=(10, 6))
+        plt.figure(figsize=(12, 6))
         
         # 绘制训练损失
-        epochs = range(1, len(self.train_losses) + 1)
-        ax1.set_xlabel('轮次')
-        ax1.set_ylabel('训练损失', color='tab:red')
-        ax1.plot(epochs, self.train_losses, 'tab:red', marker='o', label='训练损失')
-        ax1.tick_params(axis='y', labelcolor='tab:red')
+        epochs_axis = range(1, len(self.train_losses) + 1)
+        plt.plot(epochs_axis, self.train_losses, 'r-', marker='o', label='训练损失')
         
-        # 如果有验证指标，绘制到第二个y轴
+        # 如果有验证指标，绘制IoU
         if self.val_metrics:
-            # 提取验证轮次和IoU值
-            val_epochs = [self.config['train']['val_interval'] * (i + 1) for i in range(len(self.val_metrics))]
-            val_ious = [metrics['iou'] if 'iou' in metrics else metrics.get('iou_iou', 0) 
-                       for metrics in self.val_metrics]
+            val_epochs = []
+            val_ious = []
+            val_interval = self.config['train'].get('val_interval', 1)
+            for i, metrics_dict in enumerate(self.val_metrics):
+                # Attempt to find IoU, supporting different naming conventions from metrics
+                iou_val = metrics_dict.get('iou', metrics_dict.get('IoUMetric', metrics_dict.get('iou_IoUMetric', None)))
+                if iou_val is not None:
+                    val_epochs.append((i + 1) * val_interval)
+                    val_ious.append(iou_val)
             
-            ax2 = ax1.twinx()
-            ax2.set_ylabel('验证IoU', color='tab:blue')
-            ax2.plot(val_epochs, val_ious, 'tab:blue', marker='s', label='验证IoU')
-            ax2.tick_params(axis='y', labelcolor='tab:blue')
-        
-        # 添加网格和图例
-        ax1.grid(True, linestyle='--', alpha=0.7)
-        fig.tight_layout()
+            if val_ious: # Only plot if IoU values were found
+                ax2 = plt.gca().twinx()
+                ax2.plot(val_epochs, val_ious, 'b-', marker='s', label='验证 IoU')
+                ax2.set_ylabel('验证 IoU', color='b')
+                ax2.tick_params(axis='y', labelcolor='b')
+
+        plt.xlabel('轮次')
+        plt.gca().set_ylabel('训练损失', color='r')
+        plt.gca().tick_params(axis='y', labelcolor='r')
+        plt.title('训练进度')
+        plt.grid(True)
         
         # 合并图例
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        if self.val_metrics:
+        lines, labels = plt.gca().get_legend_handles_labels()
+        if 'ax2' in locals() and ax2 is not None:
             lines2, labels2 = ax2.get_legend_handles_labels()
-            ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper center')
+            plt.legend(lines + lines2, labels + labels2, loc='best')
         else:
-            ax1.legend(loc='upper center')
-        
-        # 保存图表如果提供了路径
+            plt.legend(loc='best')
+            
         if save_path:
-            plt.savefig(save_path, bbox_inches='tight', dpi=150)
+            plt.savefig(save_path)
             print(f"训练进度图表已保存到: {save_path}")
-        
-        plt.show()
+        else:
+            plt.show()

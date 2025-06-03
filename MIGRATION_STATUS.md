@@ -8,10 +8,10 @@
 
 | 模块 | 旧路径 | 新路径 | 状态 | 说明 |
 |------|--------|--------|------|------|
-| ISNet 主模型 | old/model/ISNet.py | src/isnet/models/isnet_jittor.py | ✅ 已迁移 | 主要模型结构已迁移 |
+| ISNet 主模型 | old/model/ISNet.py | src/isnet/models/isnet_jittor.py | ✅ 已迁移 | 主要模型结构已迁移，使用完整的 TTOA 模块和 DCNv2 |
 | ResNet 骨干网 | old/model/network/Resnet.py | src/isnet/models/resnet_jittor.py | ✅ 已迁移 | 骨干网络已迁移 |
 | 公共模块 | old/model/my_functionals/ | src/isnet/models/common_modules.py | ✅ 已迁移 | 包含 BasicBlock, GatedSpatialConv2d 等 |
-| TTOA 模块 | old/model/TTOA.py | src/isnet/models/DCNv2/ | ❌ 待迁移 | 需要 Jittor 版本的 DCNv2 |
+| TTOA 模块 | old/model/TTOA.py | src/isnet/models/DCNv2/ | ✅ 已迁移 | Jittor 版本的 DCNv2 和 TTOA 模块已实现 |
 
 ### 2. 数据加载与预处理
 
@@ -36,26 +36,23 @@
 | 可视化 | old/model/utils/edge_utils.py | src/isnet/utils/visualization.py | ✅ 已迁移 | 结果可视化 |
 | 视频处理 | - | src/isnet/utils/video_processing.py | ✅ 新增 | 视频处理工具 |
 | Jittor 工具 | - | src/isnet/utils/jittor_utils.py | ✅ 新增 | Jittor 特定工具 |
+| Gradient Computation | - | src/isnet/utils/gradient_utils.py | ✅ 新增 | GetGradientNopadding 模块用于生成边缘目标 |
 
 ### 5. 训练与评估
 
 | 模块 | 旧路径 | 新路径 | 状态 | 说明 |
 |------|--------|--------|------|------|
-| 训练脚本 | old/train.py | src/isnet/scripts/train.py | ✅ 已迁移 | 训练流程 |
+| 训练脚本 | old/train.py | src/isnet/scripts/train.py | ✅ 已迁移 | 训练流程，集成了 GetGradientNopadding 生成边缘目标 |
 | 评估脚本 | - | src/isnet/scripts/evaluate.py | ✅ 新增 | 模型评估 |
 | 推理脚本 | - | src/scripts/predict_*.py | ✅ 新增 | 图像/视频推理 |
 
 ## 待完成工作
 
-1. **DCNv2/TTOA 模块迁移**
-   - 需要实现 Jittor 版本的 DCNv2
-   - 当前使用 TTOA_stub 占位，需要替换为实际实现
-
-2. **测试与验证**
+1. **测试与验证**
    - 需要完成单元测试
    - 需要验证模型性能
 
-3. **文档**
+2. **文档**
    - 完善 API 文档
    - 更新 README 和示例
 

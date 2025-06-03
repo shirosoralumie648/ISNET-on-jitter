@@ -8,8 +8,8 @@
 
 | 文件路径 | 功能描述 | 迁移状态 | 备注 |
 |----------|----------|----------|------|
-| `old/model/ISNet.py` | ISNet 主模型实现 | 待迁移 | 包含完整的 ISNet 架构 |
-| `src/isnet/models/isnet_jittor.py` | Jittor 版本的 ISNet 实现 | 已迁移 | 需要完善 DCNv2 支持 |
+| `old/model/ISNet.py` | ISNet 主模型实现 (PyTorch) | 待迁移 | 包含完整的 ISNet 架构, TTOA, DCNv2 |
+| `src/isnet/models/isnet_jittor.py` | Jittor 版本的 ISNet 实现 | 已迁移 | Uses `TTOA` from `dcnv2_jittor.py` for DCNv2-based feature aggregation. |
 | `old/model/TTOA.py` | 目标感知注意力模块 | 待迁移 | 依赖 DCNv2 |
 | `old/model/DCNv2/dcn_v2.py` | DCNv2 实现 | 待迁移 | 需要 Jittor 版本 |
 
@@ -20,6 +20,7 @@
 | `old/model/network/Resnet.py` | ResNet 骨干网络 | 已迁移 | 迁移到 `resnet_jittor.py` |
 | `src/isnet/models/resnet_jittor.py` | Jittor 版本的 ResNet | 已迁移 | 适配 Jittor 接口 |
 | `old/model/network/SEresnext.py` | SE-ResNeXt 网络 | 未迁移 | 可选组件 |
+| `src/isnet/models/dcnv2_jittor.py` | Jittor DCNv2 和 TTOA 实现 | 已迁移 | Contains `DeformConv2D` and `TTOA` (Texture Transfer and Offset Aggregation) module. |
 
 ## 2. 数据加载与处理
 
@@ -55,8 +56,7 @@
 
 | 文件路径 | 功能描述 | 迁移状态 | 备注 |
 |----------|----------|----------|------|
-| `old/model/utils/edge_utils.py` | 边缘处理工具 | 已迁移 | 迁移到 `visualization.py` |
-| `src/isnet/utils/visualization.py` | 可视化工具 | 已迁移 | 支持结果可视化 |
+| `old/model/utils/edge_utils.py` | PyTorch 边缘处理和可视化工具 | 已迁移 | 部分功能迁移到 `visualization.py` |
 | `src/isnet/utils/video_processing.py` | 视频处理工具 | 新增 | 支持视频输入/输出 |
 
 ### 4.2 工具类
@@ -65,6 +65,7 @@
 |----------|----------|----------|------|
 | `old/model/utils/AttrDict.py` | 属性字典 | 已迁移 | 迁移到 Jittor 工具类 |
 | `src/isnet/utils/jittor_utils.py` | Jittor 工具函数 | 新增 | 常用工具函数 |
+| `src/isnet/utils/gradient_utils.py` | 梯度计算工具 | 新增 | Contains `GetGradientNopadding` for edge map generation. |
 
 ## 5. 训练与评估
 
@@ -73,7 +74,7 @@
 | 文件路径 | 功能描述 | 迁移状态 | 备注 |
 |----------|----------|----------|------|
 | `old/train.py` | 训练脚本 | 已迁移 | 迁移到 `scripts/train.py` |
-| `src/isnet/scripts/train.py` | Jittor 训练脚本 | 已迁移 | 适配 Jittor 接口 |
+| `src/isnet/scripts/train.py` | Jittor 训练脚本 | 已迁移 | Manages training loop, loss calculation (including combined edge loss), metrics, checkpoints. |
 
 ### 5.2 评估与推理
 
